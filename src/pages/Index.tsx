@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Mic, MicOff, Settings, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -57,7 +56,7 @@ const Index = () => {
       return;
     }
 
-    // Check if API key is required and missing
+    // Check API key requirement
     if (settings.transcriptionProvider !== 'huggingface' && !settings.apiKey.trim()) {
       toast({
         title: "API Key Required",
@@ -70,7 +69,6 @@ const Index = () => {
     setIsTranscribing(true);
 
     try {
-      // Transcribe audio
       const transcriptionResult = await TranscriptionService.transcribeAudio(
         audioBlob,
         settings.transcriptionProvider,
@@ -88,25 +86,22 @@ const Index = () => {
 
       setTranscriptionText(transcriptionResult.text);
 
-      // Generate AI summary if OpenAI API key is available
       let summary = '';
+      if (
+        settings.transcriptionProvider === 'openai' &&
+        settings.apiKey &&
+        transcriptionResult.text
+      ) {
+        setIsGeneratingSummary(true);
+        try {
+          summary = await AIService.generateSummary(transcriptionResult.text, 'openai', settings.apiKey);
+          setSummaryText(summary);
+        } catch (error) {
+          console.error('Summary generation failed:', error);
+        }
+        setIsGeneratingSummary(false);
+      }
 
-if (transcriptionResult.text && settings.apiKey) {
-  setIsGeneratingSummary(true);
-  try {
-    summary = await AIService.generateSummary(
-      transcriptionResult.text,
-      settings.transcriptionProvider,
-      settings.apiKey
-    );
-    setSummaryText(summary);
-  } catch (error) {
-    console.error('Summary generation failed:', error);
-  }
-  setIsGeneratingSummary(false);
-}
-
-      // Save to Supabase
       const audioUrl = URL.createObjectURL(audioBlob);
       const { error: saveError } = await NotesService.saveNote(
         transcriptionResult.text,
@@ -171,10 +166,9 @@ if (transcriptionResult.text && settings.apiKey) {
           </div>
         </div>
 
-        {/* Main Recording Interface */}
+        {/* Recording Panel */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 mb-6">
           <div className="text-center">
-            {/* Recording Button */}
             <div className="mb-8">
               <Button
                 onClick={isRecording ? handleStopRecording : handleStartRecording}
@@ -193,7 +187,7 @@ if (transcriptionResult.text && settings.apiKey) {
               </Button>
             </div>
 
-            {/* Status Text */}
+            {/* Status */}
             <div className="mb-6">
               {isRecording && (
                 <p className="text-red-600 dark:text-red-400 text-lg font-medium animate-pulse">
@@ -212,7 +206,7 @@ if (transcriptionResult.text && settings.apiKey) {
               )}
             </div>
 
-            {/* Action Buttons */}
+            {/* Buttons */}
             {audioBlob && !isRecording && (
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button
@@ -248,7 +242,7 @@ if (transcriptionResult.text && settings.apiKey) {
           </div>
         </div>
 
-        {/* Live Transcription & Summary */}
+        {/* Output Section */}
         {(transcriptionText || summaryText || isGeneratingSummary) && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 space-y-4">
             {transcriptionText && (
@@ -282,7 +276,7 @@ if (transcriptionResult.text && settings.apiKey) {
           </div>
         )}
 
-        {/* Provider Status */}
+        {/* Info */}
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Using: {settings.transcriptionProvider.charAt(0).toUpperCase() + settings.transcriptionProvider.slice(1)} Transcription
