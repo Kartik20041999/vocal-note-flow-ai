@@ -18,18 +18,19 @@ const App = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check if user is already logged in
   useEffect(() => {
+    // Check initial session
     AuthService.getUser().then((res) => {
-      console.log("User from Supabase:", res); 
+      console.log("Initial User from Supabase:", res);
       setUser(res);
       setLoading(false);
     });
 
-    // Listen for login/logout automatically
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log("Auth Event:", _event);
+    // Listen for login/logout events
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth Event:", event);
       if (session?.user) {
+        console.log("User from Supabase:", session.user);
         setUser(session.user);
       } else {
         setUser(null);
@@ -37,7 +38,7 @@ const App = () => {
     });
 
     return () => {
-      listener.subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
