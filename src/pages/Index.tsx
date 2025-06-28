@@ -222,6 +222,15 @@ const Index = () => {
               >
                 Clear Recording
               </Button>
+              <Button
+      onClick={async () => {
+        const result = await NotesService.saveNote("This is a test note", "", "");
+        console.log("Save Result:", result);
+      }}
+      className="bg-purple-500 text-white px-4 py-2 rounded-md mt-4"
+    >
+      Save Test Note
+    </Button>
             </div>
           )}
 
