@@ -19,17 +19,17 @@ export class NotesService {
       }
 
       const { data, error } = await supabase
-        .from('notes')
-        .insert([
-          {
-            text,
-            summary,
-            audio_url: audioUrl,
-            user_id: user.id,
-          }
-        ])
-        .select()
-        .single();
+  .from('notes')
+  .insert([
+    {
+      text,
+      summary,
+      audio_url: audioUrl,
+      user_id: user.id,
+    }
+  ])
+  .single();
+
 
       return { data, error };
     } catch (error) {
