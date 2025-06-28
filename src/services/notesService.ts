@@ -10,44 +10,13 @@ export interface Note {
 }
 
 export class NotesService {
-  
-  static async uploadAudio(audioBlob: Blob): Promise<string | null> {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      const fileName = `${user.id}-${Date.now()}.webm`;
-
-      const { data, error } = await supabase
-        .storage
-        .from('audio-recordings')
-        .upload(fileName, audioBlob, {
-          contentType: 'audio/webm',
-          upsert: true
-        });
-
-      if (error) {
-        console.error('Audio upload error:', error);
-        return null;
-      }
-
-      const { data: publicUrlData } = supabase
-        .storage
-        .from('audio-recordings')
-        .getPublicUrl(fileName);
-
-      return publicUrlData?.publicUrl || null;
-
-    } catch (error) {
-      console.error('Audio upload failed:', error);
-      return null;
-    }
-  }
-
   static async saveNote(text: string, summary?: string, audioUrl?: string): Promise<{ data: Note | null; error: any }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
+
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
 
       const { data, error } = await supabase
         .from('notes')
@@ -55,7 +24,7 @@ export class NotesService {
           {
             text,
             summary,
-            audio_url: audioUrl,
+            audio_url: audioUrl || '',  // No bucket, just blank or blob URL
             user_id: user.id,
           }
         ])
@@ -72,7 +41,10 @@ export class NotesService {
   static async getAllNotes(): Promise<{ data: Note[] | null; error: any }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
+
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
 
       const { data, error } = await supabase
         .from('notes')
@@ -98,22 +70,6 @@ export class NotesService {
     } catch (error) {
       console.error('Error deleting note:', error);
       return { error };
-    }
-  }
-
-  static async updateNote(id: string, text: string, summary?: string): Promise<{ data: Note | null; error: any }> {
-    try {
-      const { data, error } = await supabase
-        .from('notes')
-        .update({ text, summary })
-        .eq('id', id)
-        .select()
-        .single();
-
-      return { data, error };
-    } catch (error) {
-      console.error('Error updating note:', error);
-      return { data: null, error };
     }
   }
 }
