@@ -6,6 +6,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { TranscriptionService } from '@/services/transcriptionService';
 import { AIService } from '@/services/aiService';
 import { NotesService } from '@/services/notesService';
+import { uploadAudioToStorage } from '@/services/audioService';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 
@@ -97,7 +98,18 @@ const Index = () => {
         setIsGeneratingSummary(false);
       }
 
-      const audioUrl = ''; // No storage, so blank
+      // Upload audio to Supabase Storage
+      const audioUrl = await uploadAudioToStorage(audioBlob, 'recording.webm');
+
+      if (!audioUrl) {
+        toast({
+          title: "Audio Upload Failed",
+          description: "Could not upload audio file.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const { error: saveError } = await NotesService.saveNote(
         transcriptionResult.text,
         summary,
@@ -134,6 +146,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <div className="max-w-4xl mx-auto p-4">
+        
         <div className="flex justify-between items-center mb-8 pt-4">
           <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
             Vocal Note Keeper AI
@@ -162,7 +175,11 @@ const Index = () => {
                     : 'bg-blue-500 hover:bg-blue-600 hover:scale-105'
                 }`}
               >
-                {isRecording ? <MicOff className="w-8 h-8 sm:w-12 sm:h-12" /> : <Mic className="w-8 h-8 sm:w-12 sm:h-12" />}
+                {isRecording ? (
+                  <MicOff className="w-8 h-8 sm:w-12 sm:h-12" />
+                ) : (
+                  <Mic className="w-8 h-8 sm:w-12 sm:h-12" />
+                )}
               </Button>
             </div>
 
@@ -250,6 +267,15 @@ const Index = () => {
             )}
           </div>
         )}
+
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Using: {settings.transcriptionProvider.charAt(0).toUpperCase() + settings.transcriptionProvider.slice(1)} Transcription
+            {!settings.apiKey && settings.transcriptionProvider !== 'huggingface' && (
+              <span className="text-orange-500 ml-2">⚠️ API key required</span>
+            )}
+          </p>
+        </div>
       </div>
     </div>
   );
