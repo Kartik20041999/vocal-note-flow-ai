@@ -10,7 +10,30 @@ export interface Note {
 }
 
 export class NotesService {
-  static async saveNote(text: string, summary?: string): Promise<{ data: Note | null; error: any }> {
+  static async uploadAudio(audioBlob: Blob, userId: string): Promise<string | null> {
+    const fileName = `${userId}-${Date.now()}.webm`;
+
+    const { data, error } = await supabase
+      .storage
+      .from('audio-recordings')
+      .upload(fileName, audioBlob, {
+        contentType: 'audio/webm',
+      });
+
+    if (error) {
+      console.error('Audio upload failed:', error);
+      return null;
+    }
+
+    const { data: urlData } = supabase
+      .storage
+      .from('audio-recordings')
+      .getPublicUrl(fileName);
+
+    return urlData.publicUrl || null;
+  }
+
+  static async saveNote(text: string, summary?: string, audioUrl?: string): Promise<{ data: Note | null; error: any }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
@@ -24,6 +47,7 @@ export class NotesService {
           {
             text,
             summary,
+            audio_url: audioUrl,
             user_id: user.id,
           }
         ])
@@ -36,55 +60,5 @@ export class NotesService {
       return { data: null, error };
     }
   }
-
-  static async getAllNotes(): Promise<{ data: Note[] | null; error: any }> {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-
-      const { data, error } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      return { data, error };
-    } catch (error) {
-      console.error('Error fetching notes:', error);
-      return { data: null, error };
-    }
-  }
-
-  static async deleteNote(id: string): Promise<{ error: any }> {
-    try {
-      const { error } = await supabase
-        .from('notes')
-        .delete()
-        .eq('id', id);
-
-      return { error };
-    } catch (error) {
-      console.error('Error deleting note:', error);
-      return { error };
-    }
-  }
-
-  static async updateNote(id: string, text: string, summary?: string): Promise<{ data: Note | null; error: any }> {
-    try {
-      const { data, error } = await supabase
-        .from('notes')
-        .update({ text, summary })
-        .eq('id', id)
-        .select()
-        .single();
-
-      return { data, error };
-    } catch (error) {
-      console.error('Error updating note:', error);
-      return { data: null, error };
-    }
-  }
 }
+
