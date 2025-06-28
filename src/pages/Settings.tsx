@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, LogOut, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -8,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '@/hooks/useSettings';
 import { useToast } from '@/hooks/use-toast';
+import { NotesService } from '@/services/notesService';
+import { AuthService } from '@/services/authService';
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -29,6 +30,58 @@ const Settings = () => {
       title: "Settings Saved",
       description: "Your settings have been saved successfully.",
     });
+  };
+
+  const handleLogout = async () => {
+    await AuthService.signOut();
+    navigate('/');
+    toast({
+      title: "Logged Out",
+      description: "You have been logged out.",
+    });
+  };
+
+  const handleExportNotes = async (format: 'json' | 'txt') => {
+    const { data, error } = await NotesService.getAllNotes();
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: "Failed to export notes.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (data) {
+      let content = '';
+      let fileName = 'my_notes_export';
+
+      if (format === 'json') {
+        content = JSON.stringify(data, null, 2);
+        fileName += '.json';
+      } else {
+        content = data.map(note =>
+          `---\nDate: ${note.created_at}\nSummary: ${note.summary || 'N/A'}\nText: ${note.text}\n`
+        ).join('\n');
+        fileName += '.txt';
+      }
+
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export Successful",
+        description: `Your notes have been downloaded as ${format.toUpperCase()}.`,
+      });
+    }
   };
 
   const getApiKeyPlaceholder = () => {
@@ -171,13 +224,42 @@ const Settings = () => {
             </div>
           </div>
 
-          {/* Save Button */}
-          <div className="pt-4 border-t dark:border-gray-700">
+          {/* Action Buttons */}
+          <div className="pt-4 border-t dark:border-gray-700 space-y-4">
             <Button
               onClick={handleSaveSettings}
               className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg font-medium transition-colors duration-200"
             >
               Save Settings
+            </Button>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleExportNotes('json')}
+                variant="outline"
+                className="flex-1"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Export JSON
+              </Button>
+
+              <Button
+                onClick={() => handleExportNotes('txt')}
+                variant="outline"
+                className="flex-1"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Export TXT
+              </Button>
+            </div>
+
+            <Button
+              onClick={handleLogout}
+              variant="destructive"
+              className="w-full"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
             </Button>
           </div>
         </div>
