@@ -1,40 +1,26 @@
 import { useEffect, useState } from "react";
 import { AuthService } from "@/services/authService";
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Index from "./pages/Index";
-import Notes from "./pages/Notes";
-import Settings from "./pages/Settings";
-import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 const queryClient = new QueryClient();
 
-const App = () => {
+export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check initial session
     AuthService.getUser().then((res) => {
-      console.log("Initial User from Supabase:", res);
       setUser(res);
       setLoading(false);
     });
 
-    // Listen for login/logout events
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth Event:", event);
-      if (session?.user) {
-        console.log("User from Supabase:", session.user);
-        setUser(session.user);
-      } else {
-        setUser(null);
-      }
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
     });
 
     return () => {
@@ -42,34 +28,20 @@ const App = () => {
     };
   }, []);
 
-  if (loading) {
-    return <div className="p-8">Loading...</div>;
-  }
+  if (loading) return <div className="p-4">Loading...</div>;
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            {user ? (
-              <>
-                <Route path="/" element={<Index />} />
-                <Route path="/notes" element={<Notes />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/" />} />
-              </>
-            ) : (
-              <>
-                <Route path="*" element={<Login />} />
-              </>
-            )}
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
+      <Toaster />
+      <BrowserRouter>
+        <Routes>
+          {user ? (
+            <Route path="*" element={<Index />} />
+          ) : (
+            <Route path="*" element={<Login />} />
+          )}
+        </Routes>
+      </BrowserRouter>
     </QueryClientProvider>
   );
-};
-
-export default App;
+}
