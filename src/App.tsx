@@ -18,15 +18,17 @@ const App = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // Check if user is already logged in
   useEffect(() => {
     AuthService.getUser().then((res) => {
-      console.log("User Info:", res);
+      console.log("User from Supabase:", res); 
       setUser(res);
       setLoading(false);
     });
 
-    // Listen for login/logout events
+    // Listen for login/logout automatically
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log("Auth Event:", _event);
       if (session?.user) {
         setUser(session.user);
       } else {
@@ -70,4 +72,3 @@ const App = () => {
 };
 
 export default App;
-
