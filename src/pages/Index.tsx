@@ -90,16 +90,21 @@ const Index = () => {
 
       // Generate AI summary if OpenAI API key is available
       let summary = '';
-      if (settings.transcriptionProvider === 'openai' && settings.apiKey && transcriptionResult.text) {
-        setIsGeneratingSummary(true);
-        try {
-          summary = await AIService.generateSummary(transcriptionResult.text, 'openai', settings.apiKey);
-          setSummaryText(summary);
-        } catch (error) {
-          console.error('Summary generation failed:', error);
-        }
-        setIsGeneratingSummary(false);
-      }
+
+if (transcriptionResult.text && settings.apiKey) {
+  setIsGeneratingSummary(true);
+  try {
+    summary = await AIService.generateSummary(
+      transcriptionResult.text,
+      settings.transcriptionProvider,
+      settings.apiKey
+    );
+    setSummaryText(summary);
+  } catch (error) {
+    console.error('Summary generation failed:', error);
+  }
+  setIsGeneratingSummary(false);
+}
 
       // Save to Supabase
       const audioUrl = URL.createObjectURL(audioBlob);
