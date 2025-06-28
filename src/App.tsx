@@ -19,13 +19,11 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-  AuthService.getUser().then((res) => {
-    console.log("User Info:", res);  // ADD THIS
-    setUser(res);
-    setLoading(false);
-  });
-}, []);
-
+    AuthService.getUser().then((res) => {
+      console.log("User Info:", res);
+      setUser(res);
+      setLoading(false);
+    });
 
     // Listen for login/logout events
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -72,3 +70,4 @@ const App = () => {
 };
 
 export default App;
+
