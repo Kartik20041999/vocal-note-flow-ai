@@ -1,26 +1,29 @@
 import { supabase } from '@/integrations/supabase/client';
 
-export const uploadAudioToStorage = async (audioBlob: Blob, fileName: string): Promise<string | null> => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+export class AudioService {
+  static async uploadAudio(userId: string, audioBlob: Blob): Promise<{ publicUrl: string | null; error: any }> {
+    try {
+      const fileName = `${userId}-${Date.now()}.webm`;
 
-    const { data, error } = await supabase.storage
-      .from('audio-recordings')
-      .upload(`${user.id}-${Date.now()}.webm`, audioBlob);
+      const { data, error } = await supabase.storage
+        .from('audio-recordings')
+        .upload(fileName, audioBlob, {
+          contentType: 'audio/webm',
+        });
 
-    if (error) {
-      console.error('Audio upload error:', error);
-      return null;
+      if (error) {
+        console.error('Audio upload error:', error);
+        return { publicUrl: null, error };
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('audio-recordings')
+        .getPublicUrl(fileName);
+
+      return { publicUrl: publicUrlData.publicUrl, error: null };
+    } catch (error) {
+      console.error('Unexpected audio upload error:', error);
+      return { publicUrl: null, error };
     }
-
-    const { publicUrl } = supabase.storage
-      .from('audio-recordings')
-      .getPublicUrl(data.path);
-
-    return publicUrl;
-  } catch (err) {
-    console.error('Audio upload failed:', err);
-    return null;
   }
-};
+}
