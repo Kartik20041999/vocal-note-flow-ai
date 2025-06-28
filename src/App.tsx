@@ -18,10 +18,17 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    AuthService.getUser().then((res) => {
+    const checkAuth = async () => {
+      // Handle token in URL after email link clicked
+      await AuthService.handleLoginCallback();
+
+      // Get the user
+      const res = await AuthService.getUser();
       setUser(res);
       setLoading(false);
-    });
+    };
+
+    checkAuth();
   }, []);
 
   if (loading) {
