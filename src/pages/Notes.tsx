@@ -1,50 +1,108 @@
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-
-interface Note {
-  id: string;
-  timestamp: string;
-  text: string;
-  preview: string;
-}
+import { NotesService, Note } from '@/services/notesService';
+import { useToast } from '@/hooks/use-toast';
 
 const Notes = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [notes, setNotes] = useState<Note[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
-  // Mock data - TODO: Replace with Supabase data
   useEffect(() => {
-    const mockNotes: Note[] = [
-      {
-        id: '1',
-        timestamp: '2024-06-28 10:30 AM',
-        text: 'Remember to buy groceries for the weekend. Need milk, bread, eggs, and some fresh vegetables for the salad.',
-        preview: 'Remember to buy groceries for the weekend...'
-      },
-      {
-        id: '2',
-        timestamp: '2024-06-28 09:15 AM',
-        text: 'Meeting notes from the project review. Discussed timeline, budget allocation, and team responsibilities.',
-        preview: 'Meeting notes from the project review...'
-      },
-      {
-        id: '3',
-        timestamp: '2024-06-27 04:45 PM',
-        text: 'Idea for the new mobile app feature. Voice-to-text functionality with AI enhancement for better accuracy.',
-        preview: 'Idea for the new mobile app feature...'
-      }
-    ];
-    setNotes(mockNotes);
+    loadNotes();
   }, []);
 
-  const deleteNote = (id: string) => {
-    setNotes(notes.filter(note => note.id !== id));
-    // TODO: Delete from Supabase
-    console.log('Deleting note:', id);
+  const loadNotes = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await NotesService.getAllNotes();
+      
+      if (error) {
+        toast({
+          title: "Failed to load notes",
+          description: "There was an error loading your notes.",
+          variant: "destructive",
+        });
+        console.error('Error loading notes:', error);
+      } else {
+        setNotes(data || []);
+      }
+    } catch (error) {
+      toast({
+        title: "Load error",
+        description: "An unexpected error occurred while loading notes.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const deleteNote = async (id: string) => {
+    setDeletingIds(prev => new Set(prev).add(id));
+    
+    try {
+      const { error } = await NotesService.deleteNote(id);
+      
+      if (error) {
+        toast({
+          title: "Failed to delete note",
+          description: "There was an error deleting the note.",
+          variant: "destructive",
+        });
+      } else {
+        setNotes(prev => prev.filter(note => note.id !== id));
+        toast({
+          title: "Note deleted",
+          description: "The note has been successfully deleted.",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Delete error",
+        description: "An unexpected error occurred while deleting.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+    }
+  };
+
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const getPreview = (text: string, maxLength: number = 100) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <p className="text-gray-600">Loading your notes...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -86,7 +144,7 @@ const Notes = () => {
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <div className="text-sm text-gray-500 mb-2">
-                      {note.timestamp}
+                      {formatTimestamp(note.created_at)}
                     </div>
                     <div className="text-gray-800 leading-relaxed">
                       {note.text}
@@ -94,11 +152,16 @@ const Notes = () => {
                   </div>
                   <Button
                     onClick={() => deleteNote(note.id)}
+                    disabled={deletingIds.has(note.id)}
                     variant="ghost"
                     size="sm"
                     className="ml-4 text-red-500 hover:text-red-700 hover:bg-red-50"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    {deletingIds.has(note.id) ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
                   </Button>
                 </div>
               </div>

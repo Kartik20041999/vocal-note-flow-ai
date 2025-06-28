@@ -1,30 +1,121 @@
 
 import React, { useState } from 'react';
-import { Mic, MicOff, Save, List, Settings } from 'lucide-react';
+import { Mic, MicOff, Save, List, Settings, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { useVoiceRecording } from '@/hooks/useVoiceRecording';
+import { TranscriptionService } from '@/services/transcriptionService';
+import { NotesService } from '@/services/notesService';
+import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
-  const [isRecording, setIsRecording] = useState(false);
-  const [hasRecording, setHasRecording] = useState(false);
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const {
+    isRecording,
+    audioBlob,
+    startRecording,
+    stopRecording,
+    clearRecording,
+    error: recordingError
+  } = useVoiceRecording();
 
-  const handleStartStopRecording = () => {
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptionText, setTranscriptionText] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleStartStopRecording = async () => {
     if (isRecording) {
-      // Stop recording
-      setIsRecording(false);
-      setHasRecording(true);
+      stopRecording();
     } else {
-      // Start recording
-      setIsRecording(true);
-      setHasRecording(false);
+      clearRecording();
+      setTranscriptionText('');
+      await startRecording();
     }
   };
 
-  const handleSaveNote = () => {
-    // TODO: Connect to Supabase to save note
-    console.log('Saving note...');
-    setHasRecording(false);
+  const handleTranscribe = async () => {
+    if (!audioBlob) {
+      toast({
+        title: "No audio to transcribe",
+        description: "Please record some audio first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsTranscribing(true);
+    try {
+      // First try Hugging Face API
+      let result = await TranscriptionService.transcribeAudio(audioBlob);
+      
+      // If HF fails, try Web Speech API as fallback
+      if (result.error) {
+        console.log('Hugging Face failed, trying Web Speech API...');
+        result = await TranscriptionService.transcribeWithWebSpeech(audioBlob);
+      }
+
+      if (result.error) {
+        toast({
+          title: "Transcription failed",
+          description: result.error,
+          variant: "destructive",
+        });
+      } else {
+        setTranscriptionText(result.text);
+        toast({
+          title: "Transcription complete",
+          description: "Your audio has been transcribed successfully.",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Transcription error",
+        description: "An unexpected error occurred during transcription.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const handleSaveNote = async () => {
+    if (!transcriptionText.trim()) {
+      toast({
+        title: "No text to save",
+        description: "Please transcribe your recording first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const { data, error } = await NotesService.saveNote(transcriptionText);
+      
+      if (error) {
+        toast({
+          title: "Failed to save note",
+          description: "There was an error saving your note. Please try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Note saved successfully",
+          description: "Your note has been saved to your collection.",
+        });
+        setTranscriptionText('');
+        clearRecording();
+      }
+    } catch (error) {
+      toast({
+        title: "Save error",
+        description: "An unexpected error occurred while saving.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -42,6 +133,7 @@ const Index = () => {
         <div className="flex justify-center">
           <Button
             onClick={handleStartStopRecording}
+            disabled={isTranscribing || isSaving}
             className={`w-32 h-32 rounded-full text-white font-semibold text-lg shadow-lg transition-all duration-300 ${
               isRecording
                 ? 'bg-red-500 hover:bg-red-600 animate-pulse'
@@ -61,15 +153,49 @@ const Index = () => {
           </Button>
         </div>
 
+        {/* Transcription Display */}
+        {transcriptionText && (
+          <div className="bg-white rounded-lg p-4 shadow-md">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Transcription:</h3>
+            <p className="text-gray-800 leading-relaxed">{transcriptionText}</p>
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="space-y-4">
+          {audioBlob && !transcriptionText && (
+            <Button
+              onClick={handleTranscribe}
+              disabled={isTranscribing}
+              className="w-full bg-purple-500 hover:bg-purple-600 text-white py-3 rounded-lg font-medium transition-colors duration-200"
+            >
+              {isTranscribing ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Transcribing...
+                </>
+              ) : (
+                'Transcribe Audio'
+              )}
+            </Button>
+          )}
+
           <Button
             onClick={handleSaveNote}
-            disabled={!hasRecording}
+            disabled={!transcriptionText || isSaving}
             className="w-full bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors duration-200"
           >
-            <Save className="w-5 h-5 mr-2" />
-            Save Note
+            {isSaving ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5 mr-2" />
+                Save Note
+              </>
+            )}
           </Button>
 
           <div className="grid grid-cols-2 gap-4">
@@ -93,7 +219,15 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Status */}
+        {/* Status Messages */}
+        {recordingError && (
+          <div className="text-center">
+            <div className="inline-flex items-center space-x-2 bg-red-100 text-red-700 px-4 py-2 rounded-full">
+              <span className="text-sm font-medium">{recordingError}</span>
+            </div>
+          </div>
+        )}
+
         {isRecording && (
           <div className="text-center">
             <div className="inline-flex items-center space-x-2 bg-red-100 text-red-700 px-4 py-2 rounded-full">
