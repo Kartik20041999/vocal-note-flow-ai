@@ -10,6 +10,8 @@ export interface Note {
 }
 
 export class NotesService {
+
+  // Save a new note linked to the logged-in user
   static async saveNote(text: string, summary?: string, audioUrl?: string): Promise<{ data: Note | null; error: any }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -19,17 +21,17 @@ export class NotesService {
       }
 
       const { data, error } = await supabase
-  .from('notes')
-  .insert([
-    {
-      text,
-      summary,
-      audio_url: audioUrl,
-      user_id: user.id,
-    }
-  ])
-  .single();
-
+        .from('notes')
+        .insert([
+          {
+            text,
+            summary,
+            audio_url: audioUrl,
+            user_id: user.id,
+          }
+        ])
+        .select('*')  // Make sure Supabase knows what to return
+        .single();
 
       return { data, error };
     } catch (error) {
@@ -38,6 +40,7 @@ export class NotesService {
     }
   }
 
+  // Fetch all notes for the logged-in user
   static async getAllNotes(): Promise<{ data: Note[] | null; error: any }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -59,6 +62,7 @@ export class NotesService {
     }
   }
 
+  // Delete a note by its ID (optional: You can add user check in RLS)
   static async deleteNote(id: string): Promise<{ error: any }> {
     try {
       const { error } = await supabase
@@ -73,13 +77,14 @@ export class NotesService {
     }
   }
 
+  // Update an existing note
   static async updateNote(id: string, text: string, summary?: string): Promise<{ data: Note | null; error: any }> {
     try {
       const { data, error } = await supabase
         .from('notes')
         .update({ text, summary })
         .eq('id', id)
-        .select()
+        .select('*')
         .single();
 
       return { data, error };
