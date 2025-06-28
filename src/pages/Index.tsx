@@ -56,7 +56,6 @@ const Index = () => {
       return;
     }
 
-    // Check API key requirement
     if (settings.transcriptionProvider !== 'huggingface' && !settings.apiKey.trim()) {
       toast({
         title: "API Key Required",
@@ -69,6 +68,7 @@ const Index = () => {
     setIsTranscribing(true);
 
     try {
+      // Transcribe
       const transcriptionResult = await TranscriptionService.transcribeAudio(
         audioBlob,
         settings.transcriptionProvider,
@@ -85,8 +85,9 @@ const Index = () => {
       }
 
       setTranscriptionText(transcriptionResult.text);
-
       let summary = '';
+
+      // Only generate summary if OpenAI is selected
       if (
         settings.transcriptionProvider === 'openai' &&
         settings.apiKey &&
@@ -94,14 +95,20 @@ const Index = () => {
       ) {
         setIsGeneratingSummary(true);
         try {
-          summary = await AIService.generateSummary(transcriptionResult.text, 'openai', settings.apiKey);
+          summary = await AIService.generateSummary(
+            transcriptionResult.text,
+            'openai',
+            settings.apiKey
+          );
           setSummaryText(summary);
         } catch (error) {
           console.error('Summary generation failed:', error);
+        } finally {
+          setIsGeneratingSummary(false);
         }
-        setIsGeneratingSummary(false);
       }
 
+      // Save to Supabase
       const audioUrl = URL.createObjectURL(audioBlob);
       const { error: saveError } = await NotesService.saveNote(
         transcriptionResult.text,
@@ -145,122 +152,101 @@ const Index = () => {
             Vocal Note Keeper AI
           </h1>
           <div className="flex gap-2">
-            <Button
-              onClick={() => navigate('/notes')}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2"
-            >
+            <Button onClick={() => navigate('/notes')} variant="outline" size="sm">
               <FileText className="w-4 h-4" />
               <span className="hidden sm:inline">My Notes</span>
             </Button>
-            <Button
-              onClick={() => navigate('/settings')}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2"
-            >
+            <Button onClick={() => navigate('/settings')} variant="outline" size="sm">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">Settings</span>
             </Button>
           </div>
         </div>
 
-        {/* Recording Panel */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 mb-6">
-          <div className="text-center">
-            <div className="mb-8">
-              <Button
-                onClick={isRecording ? handleStopRecording : handleStartRecording}
-                disabled={isTranscribing}
-                className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full text-white font-semibold text-lg transition-all duration-300 ${
-                  isRecording
-                    ? 'bg-red-500 hover:bg-red-600 animate-pulse'
-                    : 'bg-blue-500 hover:bg-blue-600 hover:scale-105'
-                }`}
-              >
-                {isRecording ? (
-                  <MicOff className="w-8 h-8 sm:w-12 sm:h-12" />
-                ) : (
-                  <Mic className="w-8 h-8 sm:w-12 sm:h-12" />
-                )}
-              </Button>
-            </div>
+        {/* Recording */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 mb-6 text-center">
+          <div className="mb-8">
+            <Button
+              onClick={isRecording ? handleStopRecording : handleStartRecording}
+              disabled={isTranscribing}
+              className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full text-white font-semibold text-lg transition-all duration-300 ${
+                isRecording
+                  ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+                  : 'bg-blue-500 hover:bg-blue-600 hover:scale-105'
+              }`}
+            >
+              {isRecording ? <MicOff className="w-8 h-8 sm:w-12 sm:h-12" /> : <Mic className="w-8 h-8 sm:w-12 sm:h-12" />}
+            </Button>
+          </div>
 
-            {/* Status */}
-            <div className="mb-6">
-              {isRecording && (
-                <p className="text-red-600 dark:text-red-400 text-lg font-medium animate-pulse">
-                  🔴 Recording in progress...
-                </p>
-              )}
-              {audioBlob && !isRecording && (
-                <p className="text-green-600 dark:text-green-400 text-lg font-medium">
-                  ✅ Recording ready for transcription
-                </p>
-              )}
-              {!isRecording && !audioBlob && (
-                <p className="text-gray-600 dark:text-gray-400 text-lg">
-                  Tap the microphone to start recording
-                </p>
-              )}
-            </div>
-
-            {/* Buttons */}
-            {audioBlob && !isRecording && (
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <Button
-                  onClick={handleTranscribeAndSave}
-                  disabled={isTranscribing || isGeneratingSummary}
-                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2"
-                >
-                  {isTranscribing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Transcribing...
-                    </>
-                  ) : (
-                    'Transcribe & Save'
-                  )}
-                </Button>
-                <Button
-                  onClick={clearRecording}
-                  variant="outline"
-                  className="px-6 py-3 rounded-lg font-medium"
-                >
-                  Clear Recording
-                </Button>
-              </div>
+          {/* Status Text */}
+          <div className="mb-6">
+            {isRecording && (
+              <p className="text-red-600 dark:text-red-400 text-lg font-medium animate-pulse">
+                🔴 Recording in progress...
+              </p>
             )}
-
-            {/* Error Display */}
-            {recordingError && (
-              <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p className="text-red-700 dark:text-red-300 text-sm">{recordingError}</p>
-              </div>
+            {audioBlob && !isRecording && (
+              <p className="text-green-600 dark:text-green-400 text-lg font-medium">
+                ✅ Recording ready for transcription
+              </p>
+            )}
+            {!isRecording && !audioBlob && (
+              <p className="text-gray-600 dark:text-gray-400 text-lg">
+                Tap the microphone to start recording
+              </p>
             )}
           </div>
+
+          {/* Action Buttons */}
+          {audioBlob && !isRecording && (
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button
+                onClick={handleTranscribeAndSave}
+                disabled={isTranscribing || isGeneratingSummary}
+                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2"
+              >
+                {isTranscribing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Transcribing...
+                  </>
+                ) : (
+                  'Transcribe & Save'
+                )}
+              </Button>
+              <Button
+                onClick={clearRecording}
+                variant="outline"
+                className="px-6 py-3 rounded-lg font-medium"
+              >
+                Clear Recording
+              </Button>
+            </div>
+          )}
+
+          {/* Error Display */}
+          {recordingError && (
+            <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-red-700 dark:text-red-300 text-sm">{recordingError}</p>
+            </div>
+          )}
         </div>
 
-        {/* Output Section */}
+        {/* Transcription & Summary */}
         {(transcriptionText || summaryText || isGeneratingSummary) && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 space-y-4">
             {transcriptionText && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
-                  Transcription
-                </h3>
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">Transcription</h3>
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                   <p className="text-gray-700 dark:text-gray-300">{transcriptionText}</p>
                 </div>
               </div>
             )}
-
             {(summaryText || isGeneratingSummary) && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
-                  AI Summary
-                </h3>
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">AI Summary</h3>
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
                   {isGeneratingSummary ? (
                     <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
@@ -276,7 +262,7 @@ const Index = () => {
           </div>
         )}
 
-        {/* Info */}
+        {/* Provider Info */}
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Using: {settings.transcriptionProvider.charAt(0).toUpperCase() + settings.transcriptionProvider.slice(1)} Transcription
