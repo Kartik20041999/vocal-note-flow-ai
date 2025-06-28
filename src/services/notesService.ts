@@ -13,21 +13,11 @@ export class NotesService {
   static async saveNote(text: string, summary?: string, audioUrl?: string): Promise<{ data: Note | null; error: any }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
+      if (!user) throw new Error("User not authenticated");
 
       const { data, error } = await supabase
         .from('notes')
-        .insert([
-          {
-            text,
-            summary,
-            audio_url: audioUrl || '',  // No bucket, just blank or blob URL
-            user_id: user.id,
-          }
-        ])
+        .insert([{ text, summary, audio_url: audioUrl, user_id: user.id }])
         .select()
         .single();
 
@@ -41,10 +31,7 @@ export class NotesService {
   static async getAllNotes(): Promise<{ data: Note[] | null; error: any }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
+      if (!user) throw new Error("User not authenticated");
 
       const { data, error } = await supabase
         .from('notes')
@@ -56,20 +43,6 @@ export class NotesService {
     } catch (error) {
       console.error('Error fetching notes:', error);
       return { data: null, error };
-    }
-  }
-
-  static async deleteNote(id: string): Promise<{ error: any }> {
-    try {
-      const { error } = await supabase
-        .from('notes')
-        .delete()
-        .eq('id', id);
-
-      return { error };
-    } catch (error) {
-      console.error('Error deleting note:', error);
-      return { error };
     }
   }
 }
