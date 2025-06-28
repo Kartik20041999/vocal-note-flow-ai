@@ -1,16 +1,24 @@
 
 import React, { useState } from 'react';
-import { Mic, MicOff, Save, List, Settings, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Settings, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
 import { useVoiceRecording } from '@/hooks/useVoiceRecording';
+import { useSettings } from '@/hooks/useSettings';
 import { TranscriptionService } from '@/services/transcriptionService';
+import { AIService } from '@/services/aiService';
 import { NotesService } from '@/services/notesService';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { settings } = useSettings();
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [transcriptionText, setTranscriptionText] = useState('');
+  const [summaryText, setSummaryText] = useState('');
+
   const {
     isRecording,
     audioBlob,
@@ -20,222 +28,264 @@ const Index = () => {
     error: recordingError
   } = useVoiceRecording();
 
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcriptionText, setTranscriptionText] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-
-  const handleStartStopRecording = async () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      clearRecording();
-      setTranscriptionText('');
-      await startRecording();
-    }
+  const handleStartRecording = async () => {
+    setTranscriptionText('');
+    setSummaryText('');
+    clearRecording();
+    await startRecording();
+    toast({
+      title: "Recording Started",
+      description: "Speak your note now...",
+    });
   };
 
-  const handleTranscribe = async () => {
+  const handleStopRecording = () => {
+    stopRecording();
+    toast({
+      title: "Recording Stopped",
+      description: "Processing your recording...",
+    });
+  };
+
+  const handleTranscribeAndSave = async () => {
     if (!audioBlob) {
       toast({
-        title: "No audio to transcribe",
-        description: "Please record some audio first.",
+        title: "No Recording",
+        description: "Please record audio first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if API key is required and missing
+    if (settings.transcriptionProvider !== 'huggingface' && !settings.apiKey.trim()) {
+      toast({
+        title: "API Key Required",
+        description: "Please set your API key in Settings to use this transcription provider.",
         variant: "destructive",
       });
       return;
     }
 
     setIsTranscribing(true);
+
     try {
-      // First try Hugging Face API
-      let result = await TranscriptionService.transcribeAudio(audioBlob);
-      
-      // If HF fails, try Web Speech API as fallback
-      if (result.error) {
-        console.log('Hugging Face failed, trying Web Speech API...');
-        result = await TranscriptionService.transcribeWithWebSpeech(audioBlob);
+      // Transcribe audio
+      const transcriptionResult = await TranscriptionService.transcribeAudio(
+        audioBlob,
+        settings.transcriptionProvider,
+        settings.apiKey
+      );
+
+      if (transcriptionResult.error) {
+        toast({
+          title: "Transcription Failed",
+          description: transcriptionResult.error,
+          variant: "destructive",
+        });
+        return;
       }
 
-      if (result.error) {
+      setTranscriptionText(transcriptionResult.text);
+
+      // Generate AI summary if OpenAI API key is available
+      let summary = '';
+      if (settings.transcriptionProvider === 'openai' && settings.apiKey && transcriptionResult.text) {
+        setIsGeneratingSummary(true);
+        try {
+          summary = await AIService.generateSummary(transcriptionResult.text, 'openai', settings.apiKey);
+          setSummaryText(summary);
+        } catch (error) {
+          console.error('Summary generation failed:', error);
+        }
+        setIsGeneratingSummary(false);
+      }
+
+      // Save to Supabase
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const { error: saveError } = await NotesService.saveNote(
+        transcriptionResult.text,
+        summary,
+        audioUrl
+      );
+
+      if (saveError) {
         toast({
-          title: "Transcription failed",
-          description: result.error,
+          title: "Save Failed",
+          description: "Failed to save note to database.",
           variant: "destructive",
         });
       } else {
-        setTranscriptionText(result.text);
         toast({
-          title: "Transcription complete",
-          description: "Your audio has been transcribed successfully.",
+          title: "Note Saved",
+          description: "Your voice note has been saved successfully!",
         });
+        clearRecording();
+        setTranscriptionText('');
+        setSummaryText('');
       }
     } catch (error) {
       toast({
-        title: "Transcription error",
-        description: "An unexpected error occurred during transcription.",
+        title: "Error",
+        description: "An unexpected error occurred.",
         variant: "destructive",
       });
     } finally {
       setIsTranscribing(false);
-    }
-  };
-
-  const handleSaveNote = async () => {
-    if (!transcriptionText.trim()) {
-      toast({
-        title: "No text to save",
-        description: "Please transcribe your recording first.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const { data, error } = await NotesService.saveNote(transcriptionText);
-      
-      if (error) {
-        toast({
-          title: "Failed to save note",
-          description: "There was an error saving your note. Please try again.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Note saved successfully",
-          description: "Your note has been saved to your collection.",
-        });
-        setTranscriptionText('');
-        clearRecording();
-      }
-    } catch (error) {
-      toast({
-        title: "Save error",
-        description: "An unexpected error occurred while saving.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
+      setIsGeneratingSummary(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md mx-auto space-y-8">
-        {/* Title */}
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+      <div className="max-w-4xl mx-auto p-4">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8 pt-4">
+          <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
             Vocal Note Keeper AI
           </h1>
-          <p className="text-gray-600">Capture your thoughts with voice</p>
-        </div>
-
-        {/* Recording Button */}
-        <div className="flex justify-center">
-          <Button
-            onClick={handleStartStopRecording}
-            disabled={isTranscribing || isSaving}
-            className={`w-32 h-32 rounded-full text-white font-semibold text-lg shadow-lg transition-all duration-300 ${
-              isRecording
-                ? 'bg-red-500 hover:bg-red-600 animate-pulse'
-                : 'bg-blue-500 hover:bg-blue-600 hover:scale-105'
-            }`}
-          >
-            <div className="flex flex-col items-center space-y-2">
-              {isRecording ? (
-                <MicOff className="w-8 h-8" />
-              ) : (
-                <Mic className="w-8 h-8" />
-              )}
-              <span className="text-sm">
-                {isRecording ? 'Stop Recording' : 'Start Recording'}
-              </span>
-            </div>
-          </Button>
-        </div>
-
-        {/* Transcription Display */}
-        {transcriptionText && (
-          <div className="bg-white rounded-lg p-4 shadow-md">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Transcription:</h3>
-            <p className="text-gray-800 leading-relaxed">{transcriptionText}</p>
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        <div className="space-y-4">
-          {audioBlob && !transcriptionText && (
-            <Button
-              onClick={handleTranscribe}
-              disabled={isTranscribing}
-              className="w-full bg-purple-500 hover:bg-purple-600 text-white py-3 rounded-lg font-medium transition-colors duration-200"
-            >
-              {isTranscribing ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Transcribing...
-                </>
-              ) : (
-                'Transcribe Audio'
-              )}
-            </Button>
-          )}
-
-          <Button
-            onClick={handleSaveNote}
-            disabled={!transcriptionText || isSaving}
-            className="w-full bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors duration-200"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="w-5 h-5 mr-2" />
-                Save Note
-              </>
-            )}
-          </Button>
-
-          <div className="grid grid-cols-2 gap-4">
+          <div className="flex gap-2">
             <Button
               onClick={() => navigate('/notes')}
               variant="outline"
-              className="py-3 rounded-lg font-medium border-2 border-blue-200 hover:bg-blue-50 transition-colors duration-200"
+              size="sm"
+              className="flex items-center gap-2"
             >
-              <List className="w-5 h-5 mr-2" />
-              View Notes
+              <FileText className="w-4 h-4" />
+              <span className="hidden sm:inline">My Notes</span>
             </Button>
-
             <Button
               onClick={() => navigate('/settings')}
               variant="outline"
-              className="py-3 rounded-lg font-medium border-2 border-gray-200 hover:bg-gray-50 transition-colors duration-200"
+              size="sm"
+              className="flex items-center gap-2"
             >
-              <Settings className="w-5 h-5 mr-2" />
-              Settings
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:inline">Settings</span>
             </Button>
           </div>
         </div>
 
-        {/* Status Messages */}
-        {recordingError && (
+        {/* Main Recording Interface */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 mb-6">
           <div className="text-center">
-            <div className="inline-flex items-center space-x-2 bg-red-100 text-red-700 px-4 py-2 rounded-full">
-              <span className="text-sm font-medium">{recordingError}</span>
+            {/* Recording Button */}
+            <div className="mb-8">
+              <Button
+                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                disabled={isTranscribing}
+                className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full text-white font-semibold text-lg transition-all duration-300 ${
+                  isRecording
+                    ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+                    : 'bg-blue-500 hover:bg-blue-600 hover:scale-105'
+                }`}
+              >
+                {isRecording ? (
+                  <MicOff className="w-8 h-8 sm:w-12 sm:h-12" />
+                ) : (
+                  <Mic className="w-8 h-8 sm:w-12 sm:h-12" />
+                )}
+              </Button>
             </div>
+
+            {/* Status Text */}
+            <div className="mb-6">
+              {isRecording && (
+                <p className="text-red-600 dark:text-red-400 text-lg font-medium animate-pulse">
+                  🔴 Recording in progress...
+                </p>
+              )}
+              {audioBlob && !isRecording && (
+                <p className="text-green-600 dark:text-green-400 text-lg font-medium">
+                  ✅ Recording ready for transcription
+                </p>
+              )}
+              {!isRecording && !audioBlob && (
+                <p className="text-gray-600 dark:text-gray-400 text-lg">
+                  Tap the microphone to start recording
+                </p>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            {audioBlob && !isRecording && (
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button
+                  onClick={handleTranscribeAndSave}
+                  disabled={isTranscribing || isGeneratingSummary}
+                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2"
+                >
+                  {isTranscribing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Transcribing...
+                    </>
+                  ) : (
+                    'Transcribe & Save'
+                  )}
+                </Button>
+                <Button
+                  onClick={clearRecording}
+                  variant="outline"
+                  className="px-6 py-3 rounded-lg font-medium"
+                >
+                  Clear Recording
+                </Button>
+              </div>
+            )}
+
+            {/* Error Display */}
+            {recordingError && (
+              <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-red-700 dark:text-red-300 text-sm">{recordingError}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Live Transcription & Summary */}
+        {(transcriptionText || summaryText || isGeneratingSummary) && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 space-y-4">
+            {transcriptionText && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+                  Transcription
+                </h3>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <p className="text-gray-700 dark:text-gray-300">{transcriptionText}</p>
+                </div>
+              </div>
+            )}
+
+            {(summaryText || isGeneratingSummary) && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+                  AI Summary
+                </h3>
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+                  {isGeneratingSummary ? (
+                    <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating summary...
+                    </div>
+                  ) : (
+                    <p className="text-blue-700 dark:text-blue-300">{summaryText}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {isRecording && (
-          <div className="text-center">
-            <div className="inline-flex items-center space-x-2 bg-red-100 text-red-700 px-4 py-2 rounded-full">
-              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium">Recording in progress...</span>
-            </div>
-          </div>
-        )}
+        {/* Provider Status */}
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Using: {settings.transcriptionProvider.charAt(0).toUpperCase() + settings.transcriptionProvider.slice(1)} Transcription
+            {!settings.apiKey && settings.transcriptionProvider !== 'huggingface' && (
+              <span className="text-orange-500 ml-2">⚠️ API key required</span>
+            )}
+          </p>
+        </div>
       </div>
     </div>
   );
