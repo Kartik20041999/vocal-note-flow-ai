@@ -19,11 +19,13 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get current user if session exists
-    AuthService.getUser().then((res) => {
-      setUser(res);
-      setLoading(false);
-    });
+  AuthService.getUser().then((res) => {
+    console.log("User Info:", res);  // ADD THIS
+    setUser(res);
+    setLoading(false);
+  });
+}, []);
+
 
     // Listen for login/logout events
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
