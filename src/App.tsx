@@ -10,6 +10,7 @@ import Notes from "./pages/Notes";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
+import { supabase } from "@/integrations/supabase/client";
 
 const queryClient = new QueryClient();
 
@@ -18,17 +19,24 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      // Handle token in URL after email link clicked
-      await AuthService.handleLoginCallback();
-
-      // Get the user
-      const res = await AuthService.getUser();
+    // Get current user if session exists
+    AuthService.getUser().then((res) => {
       setUser(res);
       setLoading(false);
-    };
+    });
 
-    checkAuth();
+    // Listen for login/logout events
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   if (loading) {
