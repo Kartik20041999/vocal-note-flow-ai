@@ -1,19 +1,22 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export const NotesService = {
-  async saveNote(noteData: { text: string; summary?: string; audio_url?: string; user_id: string }) {
-    const { data, error } = await supabase.from("notes").insert([noteData]).select("*");
-    if (error) throw error;
-    return data;
+  async createNote({ text, summary, audio_url, user_id }) {
+    const { data, error } = await supabase
+      .from("notes")
+      .insert([{ text, summary, audio_url, user_id }])
+      .select();
+
+    return { data, error };
   },
 
-  async getNotes(userId: string) {
+  async fetchNotes(user_id) {
     const { data, error } = await supabase
       .from("notes")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", user_id)
       .order("created_at", { ascending: false });
-    if (error) throw error;
-    return data;
+
+    return { data, error };
   },
 };
