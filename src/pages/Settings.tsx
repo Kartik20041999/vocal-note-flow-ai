@@ -17,7 +17,16 @@ const Settings = () => {
   const [showApiKey, setShowApiKey] = useState(false);
 
   const handleSaveSettings = () => {
-    if (settings.transcriptionProvider !== 'huggingface' && !settings.apiKey.trim()) {
+    if (settings.summaryEnabled && !settings.openAiKey.trim()) {
+      toast({
+        title: "OpenAI Key Required",
+        description: "Summary feature requires your OpenAI API key.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!settings.apiKey.trim() && settings.transcriptionProvider !== 'huggingface') {
       toast({
         title: "API Key Required",
         description: "Please enter your API key for the selected transcription provider.",
@@ -41,236 +50,86 @@ const Settings = () => {
     });
   };
 
-  const handleExportNotes = async (format: 'json' | 'txt') => {
-    const { data, error } = await NotesService.getAllNotes();
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to export notes.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (data) {
-      let content = '';
-      let fileName = 'my_notes_export';
-
-      if (format === 'json') {
-        content = JSON.stringify(data, null, 2);
-        fileName += '.json';
-      } else {
-        content = data.map(note =>
-          `---\nDate: ${note.created_at}\nSummary: ${note.summary || 'N/A'}\nText: ${note.text}\n`
-        ).join('\n');
-        fileName += '.txt';
-      }
-
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      link.click();
-
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: "Export Successful",
-        description: `Your notes have been downloaded as ${format.toUpperCase()}.`,
-      });
-    }
-  };
-
-  const getApiKeyPlaceholder = () => {
-    switch (settings.transcriptionProvider) {
-      case 'openai':
-        return 'sk-...';
-      case 'assemblyai':
-        return 'Your AssemblyAI API key';
-      case 'huggingface':
-        return 'hf_... (optional)';
-      default:
-        return 'Enter your API key';
-    }
-  };
-
-  const getProviderDescription = () => {
-    switch (settings.transcriptionProvider) {
-      case 'openai':
-        return 'OpenAI Whisper - High accuracy, requires API key';
-      case 'assemblyai':
-        return 'AssemblyAI - Fast and accurate, requires API key';
-      case 'huggingface':
-        return 'Hugging Face - Free tier available, optional API key for better performance';
-      default:
-        return '';
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <div className="max-w-2xl mx-auto p-4">
-        {/* Header */}
+        
         <div className="flex items-center mb-6 pt-4">
-          <Button
-            onClick={() => navigate('/')}
-            variant="ghost"
-            size="sm"
-            className="mr-3 hover:bg-white/50 dark:hover:bg-gray-700/50"
-          >
+          <Button onClick={() => navigate('/')} variant="ghost" size="sm" className="mr-3">
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Settings</h1>
+          <h1 className="text-2xl font-bold">Settings</h1>
         </div>
 
-        {/* Settings Form */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 space-y-6">
-          {/* Transcription Provider Section */}
+          
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-3">Transcription Provider</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2 block">
-                  AI Provider
-                </label>
-                <Select 
-                  value={settings.transcriptionProvider} 
-                  onValueChange={(value: any) => updateSettings({ transcriptionProvider: value })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select transcription provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="huggingface">Hugging Face (Free Tier)</SelectItem>
-                    <SelectItem value="openai">OpenAI Whisper</SelectItem>
-                    <SelectItem value="assemblyai">AssemblyAI</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {getProviderDescription()}
-                </p>
-              </div>
+            <h3 className="text-lg font-semibold mb-3">Transcription Provider</h3>
+            <Select value={settings.transcriptionProvider} onValueChange={(value) => updateSettings({ transcriptionProvider: value })}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select transcription provider" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="huggingface">Hugging Face (Free Tier)</SelectItem>
+                <SelectItem value="openai">OpenAI Whisper</SelectItem>
+                <SelectItem value="assemblyai">AssemblyAI</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs mt-2">
+              {settings.transcriptionProvider === 'huggingface' ? 'Hugging Face - Free, optional API key' :
+              settings.transcriptionProvider === 'openai' ? 'OpenAI Whisper - High accuracy, requires API key' :
+              'AssemblyAI - Fast & accurate, requires API key'}
+            </p>
 
-              <div>
-                <label className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2 block">
-                  API Key
-                </label>
-                <div className="relative">
+            {(settings.transcriptionProvider !== 'huggingface') && (
+              <div className="mt-4">
+                <label className="text-sm font-medium">API Key</label>
+                <div className="relative mt-1">
                   <Input
                     type={showApiKey ? "text" : "password"}
                     value={settings.apiKey}
                     onChange={(e) => updateSettings({ apiKey: e.target.value })}
-                    placeholder={getApiKeyPlaceholder()}
+                    placeholder="Enter your API key"
                     className="pr-10"
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 h-auto p-1"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                  >
-                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  <Button type="button" variant="ghost" size="sm" className="absolute right-2 top-1/2 -translate-y-1/2" onClick={() => setShowApiKey(!showApiKey)}>
+                    {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </Button>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Your API key is stored securely in your browser and never sent to our servers.
-                </p>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Data Storage Section */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-3">Data Storage</h3>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                Storage Provider
-              </label>
-              <Select 
-                value={settings.dataStorage} 
-                onValueChange={(value) => updateSettings({ dataStorage: value })}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select storage provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="supabase">Supabase Database</SelectItem>
-                  <SelectItem value="vector" disabled>Vector DB (coming soon)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Dark Mode Section */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-3">Appearance</h3>
+            <h3 className="text-lg font-semibold mb-3">AI Summary (OpenAI Only)</h3>
             <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                  Dark Mode
-                </label>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Switch to dark theme for better viewing in low light
-                </p>
+              <p>Enable AI-generated summaries for your notes (requires OpenAI API key)</p>
+              <Switch checked={settings.summaryEnabled} onCheckedChange={(checked) => updateSettings({ summaryEnabled: checked })} />
+            </div>
+            {settings.summaryEnabled && (
+              <div className="mt-3">
+                <label className="text-sm font-medium">OpenAI API Key</label>
+                <Input
+                  type="text"
+                  value={settings.openAiKey}
+                  onChange={(e) => updateSettings({ openAiKey: e.target.value })}
+                  placeholder="sk-..."
+                />
               </div>
-              <Switch
-                checked={settings.darkMode}
-                onCheckedChange={(checked) => updateSettings({ darkMode: checked })}
-              />
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Appearance</h3>
+            <div className="flex items-center justify-between">
+              <p>Dark Mode</p>
+              <Switch checked={settings.darkMode} onCheckedChange={(checked) => updateSettings({ darkMode: checked })} />
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-4 border-t dark:border-gray-700 space-y-4">
-            <Button
-              onClick={handleSaveSettings}
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg font-medium transition-colors duration-200"
-            >
-              Save Settings
-            </Button>
-
-            <div className="flex gap-2">
-              <Button
-                onClick={() => handleExportNotes('json')}
-                variant="outline"
-                className="flex-1"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export JSON
-              </Button>
-
-              <Button
-                onClick={() => handleExportNotes('txt')}
-                variant="outline"
-                className="flex-1"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export TXT
-              </Button>
-            </div>
-
-            <Button
-              onClick={handleLogout}
-              variant="destructive"
-              className="w-full"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-        </div>
-
-        {/* API Key Help */}
-        <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-          <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">Getting API Keys</h4>
-          <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
-            <p>• <strong>OpenAI:</strong> Visit platform.openai.com/api-keys</p>
-            <p>• <strong>AssemblyAI:</strong> Visit app.assemblyai.com/signup</p>
-            <p>• <strong>Hugging Face:</strong> Visit huggingface.co/settings/tokens (optional)</p>
+          <div className="pt-4 border-t space-y-4">
+            <Button onClick={handleSaveSettings} className="w-full">Save Settings</Button>
+            <Button variant="destructive" className="w-full" onClick={handleLogout}>Logout</Button>
           </div>
         </div>
       </div>
