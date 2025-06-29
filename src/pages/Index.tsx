@@ -1,85 +1,112 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { useVoiceRecording } from "@/hooks/useVoiceRecording";
-import { useToast } from "@/hooks/use-toast";
 import { NotesService } from "@/services/notesService";
-import { TranscriptionService } from "@/services/transcriptionService";
-import { SettingsService } from "@/services/settingsService";
+import { AudioService } from "@/services/audioService";
 import { supabase } from "@/integrations/supabase/client";
-import { Mic, Square, Download, Settings as SettingsIcon } from "lucide-react";
+import { useVoiceRecording } from "@/hooks/useVoiceRecording";
+import { useSettings } from "@/hooks/useSettings";
+import { TranscriptionService } from "@/services/transcriptionService";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { Mic, Square, Download } from "lucide-react";
 
 const Index = () => {
-  const [user, setUser] = useState<any>(null);
   const [notes, setNotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+  const [user, setUser] = useState<any>(null);
+  const { settings } = useSettings();
   const { toast } = useToast();
-  const { isRecording, audioBlob, startRecording, stopRecording, clearRecording, error: recordingError } = useVoiceRecording();
+
+  const {
+    isRecording,
+    audioBlob,
+    startRecording,
+    stopRecording,
+    clearRecording,
+    error: recordingError,
+  } = useVoiceRecording();
 
   useEffect(() => {
-    const getUser = async () => {
+    const getCurrentUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       if (user) fetchNotes(user.id);
     };
+    getCurrentUser();
 
-    getUser();
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) fetchNotes(session.user.id);
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
   const fetchNotes = async (userId: string) => {
-    const { data, error } = await NotesService.fetchNotes(userId);
-    if (error) {
-      toast({ title: "Error", description: "Failed to load notes", variant: "destructive" });
-    } else {
-      setNotes(data || []);
-    }
+    const { data } = await NotesService.fetchNotes(userId);
+    setNotes(data || []);
   };
 
-  const handleSaveNote = async () => {
+  const handleTranscribeAndSave = async () => {
     if (!user || !audioBlob) return;
 
     setLoading(true);
 
-    const { publicUrl, error: uploadError } = await NotesService.uploadAudio(user.id, audioBlob);
-    if (uploadError || !publicUrl) {
+    const { publicUrl, error: uploadError } = await AudioService.uploadAudio(user.id, audioBlob);
+    if (uploadError) {
       toast({ title: "Error", description: "Audio upload failed", variant: "destructive" });
       setLoading(false);
       return;
     }
 
-    const settings = await SettingsService.getSettings();
-    const { text: transcription, error: transcriptionError } = await TranscriptionService.transcribeAudio(audioBlob, settings);
-
-    if (transcriptionError) {
-      toast({ title: "Error", description: transcriptionError, variant: "destructive" });
+    const { text: transcription, error: transcribeError } = await TranscriptionService.transcribeAudio(audioBlob, settings);
+    if (transcribeError) {
+      toast({ title: "Error", description: transcribeError, variant: "destructive" });
       setLoading(false);
       return;
     }
 
-    const { error } = await NotesService.createNote({
+    const { error: noteError } = await NotesService.createNote({
       text: transcription,
       summary: "",
-      audio_url: publicUrl,
-      user_id: user.id
+      audio_url: publicUrl || "",
+      user_id: user.id,
     });
 
-    if (error) {
+    if (noteError) {
       toast({ title: "Error", description: "Failed to save note", variant: "destructive" });
-    } else {
-      toast({ title: "Success", description: "Note saved successfully!" });
-      clearRecording();
-      fetchNotes(user.id);
+      setLoading(false);
+      return;
     }
 
+    toast({ title: "Success", description: "Note saved with transcription!" });
+    clearRecording();
+    fetchNotes(user.id);
     setLoading(false);
+  };
+
+  const exportNotes = () => {
+    if (notes.length === 0) {
+      toast({ title: "No Notes", description: "No notes to export", variant: "destructive" });
+      return;
+    }
+
+    const exportData = notes.map(note => ({
+      date: note.created_at,
+      transcription: note.text,
+      summary: note.summary || 'N/A',
+    }));
+
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "notes-export.json";
+    link.click();
+
+    URL.revokeObjectURL(url);
+    toast({ title: "Export Complete", description: "Notes exported successfully!" });
   };
 
   if (!user) {
@@ -87,63 +114,65 @@ const Index = () => {
       <div className="p-8 text-center">
         <h1 className="text-2xl font-bold mb-4">Vocal Notes</h1>
         <p className="mb-4">Please log in to use the app.</p>
-        <Button onClick={() => navigate('/login')}>Go to Login</Button>
+        <Button onClick={() => window.location.href = "/login"}>Go to Login</Button>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-8 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Vocal Notes</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate('/settings')}>
-            <SettingsIcon className="w-4 h-4 mr-2" />
-            Settings
-          </Button>
-        </div>
+        <Button onClick={exportNotes} variant="outline">
+          <Download className="w-4 h-4 mr-2" /> Export Notes
+        </Button>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="flex gap-2 mb-4">
-          {!isRecording ? (
-            <Button onClick={startRecording} variant="outline">
-              <Mic className="w-4 h-4 mr-2" /> Start Recording
-            </Button>
-          ) : (
-            <Button onClick={stopRecording} variant="destructive">
-              <Square className="w-4 h-4 mr-2" /> Stop Recording
-            </Button>
-          )}
-        </div>
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6 text-center">
+        {!isRecording && !audioBlob && (
+          <Button onClick={startRecording} className="w-full flex items-center justify-center gap-2">
+            <Mic className="w-4 h-4" /> Start Recording
+          </Button>
+        )}
 
-        {audioBlob && (
-          <div className="mb-4 p-3 bg-green-50 rounded-lg">
-            <p className="text-sm text-green-700 mb-2">Recording ready</p>
-            <audio controls src={URL.createObjectURL(audioBlob)} className="w-full mb-3" />
-            <Button className="w-full" onClick={handleSaveNote} disabled={loading}>
-              {loading ? "Saving..." : "Save & Transcribe"}
+        {isRecording && (
+          <Button onClick={stopRecording} variant="destructive" className="w-full flex items-center justify-center gap-2">
+            <Square className="w-4 h-4" /> Stop Recording
+          </Button>
+        )}
+
+        {audioBlob && !isRecording && (
+          <>
+            <audio controls src={URL.createObjectURL(audioBlob)} className="w-full mt-4 mb-4" />
+            <Button onClick={handleTranscribeAndSave} disabled={loading} className="w-full mb-2">
+              {loading ? "Saving..." : "Transcribe & Save"}
             </Button>
-          </div>
+            <Button onClick={clearRecording} variant="outline" className="w-full">
+              Clear
+            </Button>
+          </>
         )}
       </div>
 
-      <h2 className="text-xl font-bold mb-4">Your Notes</h2>
+      <h2 className="text-2xl font-bold mb-4">Your Notes ({notes.length})</h2>
       {notes.length === 0 ? (
-        <p className="text-gray-500">No notes yet. Record your first one!</p>
+        <div className="text-center text-gray-500">No notes yet. Record your first note!</div>
       ) : (
         <div className="space-y-4">
           {notes.map(note => (
-            <div key={note.id} className="bg-white rounded-lg shadow-md p-4 space-y-2">
-              <p className="text-sm text-gray-500">{new Date(note.created_at).toLocaleString()}</p>
-              {note.summary && (
-                <div className="bg-blue-50 p-3 rounded">
-                  <h4 className="font-medium text-blue-800 mb-1">AI Summary</h4>
-                  <p className="text-blue-700 text-sm">{note.summary}</p>
+            <div key={note.id} className="bg-white rounded-lg shadow-md p-6">
+              <span className="text-sm text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
+              {note.text && (
+                <div className="mt-2 p-3 bg-blue-50 rounded">
+                  <h4 className="font-medium text-blue-800 mb-1">Transcription</h4>
+                  <p className="text-blue-700 text-sm whitespace-pre-wrap">{note.text}</p>
                 </div>
               )}
-              <p className="whitespace-pre-wrap">{note.text}</p>
-              {note.audio_url && <audio controls src={note.audio_url} className="w-full mt-2" />}
+              {note.audio_url && (
+                <div className="mt-3">
+                  <audio controls src={note.audio_url} className="w-full" />
+                </div>
+              )}
             </div>
           ))}
         </div>
