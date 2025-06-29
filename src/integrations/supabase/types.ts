@@ -12,22 +12,25 @@ export type Database = {
       notes: {
         Row: {
           audio_url: string | null
-          created_at: string
+          created_at: string | null
           id: string
+          summary: string | null
           text: string
           user_id: string | null
         }
         Insert: {
           audio_url?: string | null
-          created_at?: string
+          created_at?: string | null
           id?: string
+          summary?: string | null
           text: string
           user_id?: string | null
         }
         Update: {
           audio_url?: string | null
-          created_at?: string
+          created_at?: string | null
           id?: string
+          summary?: string | null
           text?: string
           user_id?: string | null
         }
