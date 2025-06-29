@@ -1,93 +1,81 @@
+// pages/Settings.tsx
 import React, { useState } from 'react';
-import { ArrowLeft, Eye, EyeOff, LogOut } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Input } from '@/components/ui/input';
+import { ArrowLeft, Eye, EyeOff, LogOut, Download } from 'lucide-react';
+import { Button, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, Switch, Input } from '@/components/ui';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '@/hooks/useSettings';
 import { useToast } from '@/hooks/use-toast';
 import { AuthService } from '@/services/authService';
+import { NotesService } from '@/services/notesService';
 
-const Settings = () => {
-  const navigate = useNavigate();
+export default function Settings() {
+  const nav = useNavigate();
   const { settings, updateSettings } = useSettings();
   const { toast } = useToast();
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [showKey, setShowKey] = useState(false);
 
-  const handleSaveSettings = () => {
-    if (settings.enableSummary && (!settings.apiKey.trim() || settings.transcriptionProvider !== "openai")) {
-      toast({
-        title: "OpenAI API Key Required",
-        description: "To enable summaries, please enter a valid OpenAI API key.",
-        variant: "destructive",
-      });
-      return;
+  const handleSave = () => {
+    if (settings.enableSummary && (!settings.openaiKey.trim())) {
+      return toast({ title: 'Need OpenAI Key', variant: 'destructive' });
     }
-    toast({ title: "Settings Saved", description: "Your settings have been saved." });
+    toast({ title: 'Settings Saved' });
   };
 
-  const handleLogout = async () => {
-    await AuthService.signOut();
-    navigate('/');
-    toast({ title: "Logged Out", description: "You have been logged out." });
+  const handleExport = (fmt: 'json' | 'txt') => {
+    NotesService.getAllNotes().then(({ data, error }) => {
+      if (error) return toast({ title: 'Export failed', variant: 'destructive' });
+      const content = fmt==='json' ? JSON.stringify(data) :
+        data.map(n=>`---\n${n.created_at}\n${n.text}`).join('\n');
+      const blob = new Blob([content], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `notes.${fmt}`;
+      a.click();
+      toast({ title: 'Exported' });
+    });
   };
 
   return (
-    <div className="p-6 max-w-xl mx-auto">
-      <div className="mb-4 flex items-center">
-        <Button variant="ghost" onClick={() => navigate('/')}>
-          <ArrowLeft />
-        </Button>
-        <h1 className="text-2xl font-bold ml-2">Settings</h1>
+    <div><Button onClick={()=>nav('/')}>Back</Button>
+      <h1>Settings</h1>
+
+      <div>
+        <label>Provider</label>
+        <Select value={settings.provider} onValueChange={v=>updateSettings({ provider: v })}>
+          <SelectTrigger><SelectValue/></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="hf">HuggingFace</SelectItem>
+            <SelectItem value="asm">AssemblyAI</SelectItem>
+            <SelectItem value="openai">OpenAI Whisper</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="space-y-4">
-        <div>
-          <label className="font-medium">Transcription Provider</label>
-          <Select value={settings.transcriptionProvider} onValueChange={(value) => updateSettings({ transcriptionProvider: value })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select provider" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="huggingface">Hugging Face (Free Tier)</SelectItem>
-              <SelectItem value="openai">OpenAI Whisper</SelectItem>
-              <SelectItem value="assemblyai">AssemblyAI</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div>
+        <label>Enable Summary (OpenAI only)</label>
+        <Switch
+          checked={settings.enableSummary}
+          onCheckedChange={c=>updateSettings({ enableSummary: c })}
+        />
+      </div>
 
+      {settings.provider === 'openai' || settings.enableSummary ? (
         <div>
-          <label className="font-medium">API Key</label>
-          <div className="relative">
-            <Input
-              type={showApiKey ? "text" : "password"}
-              value={settings.apiKey}
-              onChange={(e) => updateSettings({ apiKey: e.target.value })}
-              placeholder="Enter API key"
-            />
-            <Button type="button" variant="ghost" className="absolute right-2 top-1/2 -translate-y-1/2" onClick={() => setShowApiKey(!showApiKey)}>
-              {showApiKey ? <EyeOff /> : <Eye />}
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-medium">AI Summary (OpenAI Only)</p>
-            <p className="text-sm text-gray-500">Enable AI summaries for your notes</p>
-          </div>
-          <Switch
-            checked={settings.enableSummary}
-            onCheckedChange={(checked) => updateSettings({ enableSummary: checked })}
+          <label>OpenAI Key {showKey ? '(visible)' : ''}</label>
+          <Input
+            type={showKey ? 'text' : 'password'}
+            value={settings.openaiKey}
+            placeholder="sk..."
+            onChange={e=>updateSettings({ openaiKey: e.target.value })}
           />
+          <Button onClick={()=>setShowKey(s=>!s)}>{showKey ? <EyeOff/> : <Eye/>}</Button>
         </div>
+      ) : null}
 
-        <Button className="w-full" onClick={handleSaveSettings}>Save Settings</Button>
-        <Button className="w-full" variant="destructive" onClick={handleLogout}>Logout</Button>
-      </div>
+      <Button onClick={handleSave}>Save Settings</Button>
+      <Button variant="outline" onClick={()=>handleExport('json')}><Download/>JSON</Button>
+      <Button variant="outline" onClick={()=>handleExport('txt')}><Download/>TXT</Button>
+      <Button variant="destructive" onClick={()=>AuthService.signOut().then(()=>nav('/'))}><LogOut/>Logout</Button>
     </div>
   );
-};
-
-export default Settings;
+}
