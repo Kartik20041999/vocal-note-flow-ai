@@ -1,99 +1,82 @@
-// src/pages/Index.tsx
-import React, { useState, useEffect } from "react";
-import { useVoiceRecording } from "@/hooks/useVoiceRecording";
-import { useSettings } from "@/hooks/useSettings";
-import { TranscriptionService } from "@/services/transcriptionService";
-import { AIService } from "@/services/aiService";
+import { useEffect, useState } from "react";
 import { NotesService } from "@/services/notesService";
-import { useToast } from "@/hooks/use-toast";
-import { Mic, Square, Loader2 } from "lucide-react";
+import { AudioService } from "@/services/audioService";
+import { TranscriptionService } from "@/services/transcriptionService";
+import { useVoiceRecording } from "@/hooks/useVoiceRecording";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { Mic, Square } from "lucide-react";
+import { useSettings } from "@/hooks/useSettings";
 
-interface Note {
-  id: string;
-  text: string;
-  summary?: string;
-  audio_url?: string;
-  created_at: string;
-}
-
-export default function Index() {
-  const { settings } = useSettings();
+const Index = () => {
+  const [notes, setNotes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [transcribing, setTranscribing] = useState(false);
-  const [recording, setRecording] = useState<File | null>(null);
-  const [audioUrl, setAudioUrl] = useState("");
-
-  const { isRecording, audioBlob, startRecording, stopRecording } = useVoiceRecording();
+  const { settings } = useSettings();
+  const { isRecording, audioBlob, startRecording, stopRecording, clearRecording, error } = useVoiceRecording();
 
   useEffect(() => {
-    NotesService.fetchNotes().then(r => {
-      if (r.data) setNotes(r.data);
+    NotesService.getAllNotes().then(({ data }) => {
+      setNotes(data || []);
     });
   }, []);
 
-  const processAndSave = async () => {
+  const handleSave = async () => {
     if (!audioBlob) return;
-    setTranscribing(true);
 
-    const provider = settings.transcriptionProvider;
-    const key = settings.apiKey;
-
-    const transcript = await TranscriptionService.transcribeAudio(audioBlob, provider, key);
-    if (transcript.error) {
-      toast({ title: "Transcription failed", description: transcript.error, variant: "destructive" });
-      setTranscribing(false);
+    setLoading(true);
+    const { publicUrl, error: uploadError } = await AudioService.uploadAudio(audioBlob);
+    if (uploadError) {
+      toast({ title: "Error", description: "Audio upload failed", variant: "destructive" });
+      setLoading(false);
       return;
     }
 
-    const summary = settings.enableSummary && provider === "openai"
-      ? await AIService.generateSummary(transcript.text, key)
-      : "";
+    const { text, error: transcribeError } = await TranscriptionService.transcribeAudio(audioBlob, settings);
+    if (transcribeError) {
+      toast({ title: "Error", description: "Transcription failed", variant: "destructive" });
+      setLoading(false);
+      return;
+    }
 
-    const audioUrl = URL.createObjectURL(audioBlob);
-    await NotesService.createNote({ text: transcript.text, summary, audio_url: audioUrl });
-    const { data } = await NotesService.fetchNotes();
-    setNotes(data!);
-
-    toast({ title: "Saved!" });
-    setTranscribing(false);
-    setRecording(null);
-    setAudioUrl("");
+    await NotesService.createNote({ text, summary: "", audio_url: publicUrl, user_id: "", });
+    setLoading(false);
+    clearRecording();
+    toast({ title: "Note Saved", description: "Your note has been saved." });
+    NotesService.getAllNotes().then(({ data }) => setNotes(data || []));
   };
 
   return (
-    <div className="p-4 max-w-xl mx-auto">
+    <div className="p-6 max-w-xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">Record and Save Note</h1>
+
       {!isRecording ? (
-        <Button onClick={startRecording} className="w-full py-6"><Mic size={24} /> Start</Button>
+        <Button className="w-full mb-4" onClick={startRecording}><Mic className="mr-2" />Start Recording</Button>
       ) : (
-        <Button onClick={() => { stopRecording(); setRecording(audioBlob!); setAudioUrl(URL.createObjectURL(audioBlob!)); }} variant="destructive" className="w-full py-6">
-          <Square size={24} /> Stop
-        </Button>
+        <Button className="w-full mb-4" variant="destructive" onClick={stopRecording}><Square className="mr-2" />Stop Recording</Button>
       )}
 
-      {recording && (
-        <div className="mt-4 bg-gray-100 p-4 space-y-2">
-          <audio controls src={audioUrl} className="w-full" />
-          <Button onClick={processAndSave} disabled={transcribing} className="w-full">
-            {transcribing ? <><Loader2 className="animate-spin" /> Saving...</> : "Save Note"}
-          </Button>
+      {audioBlob && (
+        <div className="space-y-4">
+          <audio controls src={URL.createObjectURL(audioBlob)} className="w-full" />
+          <Button className="w-full" onClick={handleSave} disabled={loading}>{loading ? "Saving..." : "Save Note"}</Button>
         </div>
       )}
 
-      <hr className="my-6" />
-      <h2 className="text-xl font-semibold mb-2">Saved Notes</h2>
-
-      {notes.length === 0 && <p>No notes yet.</p>}
-      {notes.map(n => (
-        <div key={n.id} className="mb-4 p-3 bg-white rounded shadow">
-          <audio controls src={n.audio_url} className="w-full mb-2" />
-          <p className="italic text-sm text-gray-600">{new Date(n.created_at).toLocaleString()}</p>
-          <p className="mt-1">{n.text}</p>
-          {n.summary && <p className="mt-2 text-blue-600">Summary: {n.summary}</p>}
-        </div>
-      ))}
+      <h2 className="text-xl font-bold mt-8 mb-2">Saved Notes</h2>
+      {notes.length === 0 ? <p>No notes yet.</p> : (
+        <ul className="space-y-2">
+          {notes.map(note => (
+            <li key={note.id} className="p-4 bg-gray-100 rounded">
+              <p className="text-sm text-gray-600">{new Date(note.created_at).toLocaleString()}</p>
+              <p className="mt-2">{note.text}</p>
+              {note.audio_url && <audio controls src={note.audio_url} className="w-full mt-2" />}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
-);
-}
+  );
+};
+
+export default Index;
