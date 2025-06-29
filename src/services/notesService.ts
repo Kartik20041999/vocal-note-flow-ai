@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 export interface Note {
@@ -39,8 +38,9 @@ export const NotesService = {
 
   async getAllNotes() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { data: null, error: { message: "Not authenticated" } };
-
+    if (!user) {
+      return { data: null, error: { message: "You must be logged in to fetch notes." } };
+    }
     return this.fetchNotes(user.id);
   },
 
