@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { NotesService } from "@/services/notesService";
 import { AudioService } from "@/services/audioService";
@@ -81,7 +80,7 @@ const Index = () => {
         setLoading(false);
         return;
       }
-      audioUrl = publicUrl;
+      audioUrl = publicUrl || "";
     }
 
     const { error } = await NotesService.createNote({

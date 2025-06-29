@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Trash2, Edit, Play, Pause, Calendar, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -53,7 +52,7 @@ const Notes = () => {
     }
   };
 
-  const toggleAudio = (noteId: string, audioUrl?: string) => {
+  const toggleAudio = (noteId: string, audioUrl?: string | null) => {
     if (!audioUrl) return;
 
     if (playingAudio === noteId) {
