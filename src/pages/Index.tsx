@@ -1,124 +1,99 @@
-import { useEffect, useState } from "react";
-import { NotesService } from "@/services/notesService";
-import { AudioService } from "@/services/audioService";
-import { supabase } from "@/integrations/supabase/client";
+// src/pages/Index.tsx
+import React, { useState, useEffect } from "react";
 import { useVoiceRecording } from "@/hooks/useVoiceRecording";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { useSettings } from "@/hooks/useSettings";
+import { TranscriptionService } from "@/services/transcriptionService";
+import { AIService } from "@/services/aiService";
+import { NotesService } from "@/services/notesService";
 import { useToast } from "@/hooks/use-toast";
-import { Mic, Square, Play, Pause, Download, Settings as SettingsIcon } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Mic, Square, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-const Index = () => {
-  const [notes, setNotes] = useState<any[]>([]);
-  const [text, setText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
+interface Note {
+  id: string;
+  text: string;
+  summary?: string;
+  audio_url?: string;
+  created_at: string;
+}
+
+export default function Index() {
+  const { settings } = useSettings();
   const { toast } = useToast();
-  const navigate = useNavigate();
-  
-  const { isRecording, audioBlob, startRecording, stopRecording, clearRecording, error: recordingError } = useVoiceRecording();
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [transcribing, setTranscribing] = useState(false);
+  const [recording, setRecording] = useState<File | null>(null);
+  const [audioUrl, setAudioUrl] = useState("");
+
+  const { isRecording, audioBlob, startRecording, stopRecording } = useVoiceRecording();
 
   useEffect(() => {
-    const getCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      if (user) fetchNotes(user.id);
-    };
-    getCurrentUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchNotes(session.user.id);
+    NotesService.fetchNotes().then(r => {
+      if (r.data) setNotes(r.data);
     });
-
-    return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (recordingError) {
-      toast({ title: "Recording Error", description: recordingError, variant: "destructive" });
-    }
-  }, [recordingError]);
+  const processAndSave = async () => {
+    if (!audioBlob) return;
+    setTranscribing(true);
 
-  const fetchNotes = async (userId: string) => {
-    const { data } = await NotesService.fetchNotes(userId);
-    setNotes(data || []);
+    const provider = settings.transcriptionProvider;
+    const key = settings.apiKey;
+
+    const transcript = await TranscriptionService.transcribeAudio(audioBlob, provider, key);
+    if (transcript.error) {
+      toast({ title: "Transcription failed", description: transcript.error, variant: "destructive" });
+      setTranscribing(false);
+      return;
+    }
+
+    const summary = settings.enableSummary && provider === "openai"
+      ? await AIService.generateSummary(transcript.text, key)
+      : "";
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    await NotesService.createNote({ text: transcript.text, summary, audio_url: audioUrl });
+    const { data } = await NotesService.fetchNotes();
+    setNotes(data!);
+
+    toast({ title: "Saved!" });
+    setTranscribing(false);
+    setRecording(null);
+    setAudioUrl("");
   };
-
-  const handleSave = async () => {
-    if (!user) return;
-    setLoading(true);
-
-    let audioUrl = "";
-    if (audioBlob) {
-      const { publicUrl, error } = await AudioService.uploadAudio(user.id, audioBlob);
-      if (error) {
-        toast({ title: "Error", description: "Audio upload failed", variant: "destructive" });
-        setLoading(false);
-        return;
-      }
-      audioUrl = publicUrl || "";
-    }
-
-    const { error } = await NotesService.createNote({
-      text, summary: "", audio_url: audioUrl, user_id: user.id,
-    });
-
-    if (error) {
-      toast({ title: "Error", description: "Failed to save note", variant: "destructive" });
-    } else {
-      toast({ title: "Success", description: "Note saved successfully!" });
-      setText(""); clearRecording(); fetchNotes(user.id);
-    }
-    setLoading(false);
-  };
-
-  if (!user) {
-    return (
-      <div className="p-8 text-center">
-        <h1 className="text-2xl font-bold mb-4">Vocal Notes</h1>
-        <p className="mb-4">Please log in to use the note-taking app.</p>
-        <Button onClick={() => window.location.href = '/login'}>Go to Login</Button>
-      </div>
-    );
-  }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Vocal Notes</h1>
-        <div className="flex gap-2">
-          <Button onClick={() => navigate('/settings')} variant="outline">
-            <SettingsIcon className="w-4 h-4 mr-2" /> Settings
+    <div className="p-4 max-w-xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Record and Save Note</h1>
+      {!isRecording ? (
+        <Button onClick={startRecording} className="w-full py-6"><Mic size={24} /> Start</Button>
+      ) : (
+        <Button onClick={() => { stopRecording(); setRecording(audioBlob!); setAudioUrl(URL.createObjectURL(audioBlob!)); }} variant="destructive" className="w-full py-6">
+          <Square size={24} /> Stop
+        </Button>
+      )}
+
+      {recording && (
+        <div className="mt-4 bg-gray-100 p-4 space-y-2">
+          <audio controls src={audioUrl} className="w-full" />
+          <Button onClick={processAndSave} disabled={transcribing} className="w-full">
+            {transcribing ? <><Loader2 className="animate-spin" /> Saving...</> : "Save Note"}
           </Button>
         </div>
-      </div>
+      )}
 
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <Textarea placeholder="Type your note or record audio..." value={text} onChange={(e) => setText(e.target.value)} className="min-h-[120px] mb-4" />
-        <div className="flex gap-2 mb-4">
-          {!isRecording ? (
-            <Button onClick={startRecording} variant="outline"><Mic className="w-4 h-4" /> Start Recording</Button>
-          ) : (
-            <Button onClick={stopRecording} variant="destructive"><Square className="w-4 h-4" /> Stop Recording</Button>
-          )}
-          {audioBlob && <Button onClick={clearRecording} variant="outline">Clear Recording</Button>}
+      <hr className="my-6" />
+      <h2 className="text-xl font-semibold mb-2">Saved Notes</h2>
+
+      {notes.length === 0 && <p>No notes yet.</p>}
+      {notes.map(n => (
+        <div key={n.id} className="mb-4 p-3 bg-white rounded shadow">
+          <audio controls src={n.audio_url} className="w-full mb-2" />
+          <p className="italic text-sm text-gray-600">{new Date(n.created_at).toLocaleString()}</p>
+          <p className="mt-1">{n.text}</p>
+          {n.summary && <p className="mt-2 text-blue-600">Summary: {n.summary}</p>}
         </div>
-
-        {audioBlob && (
-          <div className="mb-4 p-3 bg-green-50 rounded-lg">
-            <p className="text-sm text-green-700 mb-2">Recording ready to save</p>
-            <audio controls src={URL.createObjectURL(audioBlob)} className="w-full" />
-          </div>
-        )}
-
-        <Button onClick={handleSave} disabled={loading || (!text.trim() && !audioBlob)} className="w-full">
-          {loading ? "Saving..." : "Save Note"}
-        </Button>
-      </div>
+      ))}
     </div>
-  );
-};
-
-export default Index;
+);
+}
