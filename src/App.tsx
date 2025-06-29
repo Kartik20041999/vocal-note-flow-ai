@@ -1,28 +1,26 @@
-import { useEffect, useState } from "react";
-import { AuthService } from "@/services/authService";
+// src/App.tsx
+import React, { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthService } from "@/services/authService";
+import { supabase } from "@/integrations/supabase/client";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
-import { supabase } from "@/integrations/supabase/client";
 
 const App = () => {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    AuthService.getUser().then((res) => {
-      setUser(res);
+    AuthService.getUser().then((u) => {
+      setUser(u);
       setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user ?? null);
     });
-
-    return () => {
-      listener.subscription.unsubscribe();
-    };
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   if (loading) return <div className="p-8">Loading...</div>;
@@ -43,5 +41,4 @@ const App = () => {
     </BrowserRouter>
   );
 };
-
 export default App;
