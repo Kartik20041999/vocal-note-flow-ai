@@ -1,52 +1,75 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NotesService } from "@/services/notesService";
-import { useToast } from "@/hooks/use-toast";
+import { AudioService } from "@/services/audioService";
+import { supabase } from "@/integrations/supabase/client";
 
-interface IndexProps {
-  user: { id: string; email: string };
-}
-
-const Index = ({ user }: IndexProps) => {
+const Index = () => {
+  const [notes, setNotes] = useState<any[]>([]);
   const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const { toast } = useToast();
+  const [recording, setRecording] = useState<Blob | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const saveNote = async () => {
-    if (!text) return;
+  const user = supabase.auth.user();
 
-    setSaving(true);
-    try {
-      await NotesService.saveNote({
-        text,
-        user_id: user.id,
-        summary: "",
-        audio_url: "",
-      });
-      toast({ title: "Note saved successfully!" });
-      setText("");
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Error saving note" });
+  useEffect(() => {
+    if (user) {
+      fetchNotes();
     }
-    setSaving(false);
+  }, [user]);
+
+  const fetchNotes = async () => {
+    const { data } = await NotesService.fetchNotes(user.id);
+    setNotes(data || []);
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+
+    let audioUrl = "";
+
+    if (recording) {
+      const { publicUrl, error } = await AudioService.uploadAudio(user.id, recording);
+      if (error) return alert("Audio upload failed");
+      audioUrl = publicUrl;
+    }
+
+    const { error } = await NotesService.createNote({
+      text,
+      summary: "",
+      audio_url: audioUrl,
+      user_id: user.id,
+    });
+
+    if (error) return alert("Failed to save note");
+
+    setText("");
+    setRecording(null);
+    fetchNotes();
+    setLoading(false);
   };
 
   return (
-    <div className="p-4">
-      <h1 className="text-xl font-bold mb-4">Welcome, {user.email}</h1>
+    <div className="p-8">
+      <h1>Vocal Notes</h1>
       <textarea
+        placeholder="Type your note..."
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Write your note here..."
-        className="w-full p-2 border mb-4"
+        className="border w-full p-2"
       />
-      <button
-        onClick={saveNote}
-        disabled={saving}
-        className="px-4 py-2 bg-blue-500 text-white rounded"
-      >
-        {saving ? "Saving..." : "Save Note"}
+      <button onClick={handleSave} disabled={loading}>
+        {loading ? "Saving..." : "Save Note"}
       </button>
+
+      <h2 className="mt-6">Your Notes</h2>
+      {notes.map((note) => (
+        <div key={note.id} className="border p-4 my-2">
+          <p>{note.text}</p>
+          {note.audio_url && (
+            <audio controls src={note.audio_url} className="mt-2" />
+          )}
+        </div>
+      ))}
     </div>
   );
 };
