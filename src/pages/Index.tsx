@@ -1,82 +1,81 @@
-import { useEffect, useState } from "react";
-import { NotesService } from "@/services/notesService";
-import { AudioService } from "@/services/audioService";
-import { TranscriptionService } from "@/services/transcriptionService";
-import { useVoiceRecording } from "@/hooks/useVoiceRecording";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { Mic, Square } from "lucide-react";
-import { useSettings } from "@/hooks/useSettings";
+// pages/Index.tsx
+import React, { useEffect, useState } from 'react';
+import { useVoiceRecording } from '@/hooks/useVoiceRecording';
+import { AudioService } from '@/services/audioService';
+import { NotesService } from '@/services/notesService';
+import { supabase } from '@/integrations/supabase/client';
+import { useSettings } from '@/hooks/useSettings';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Mic, Square } from 'lucide-react';
 
-const Index = () => {
-  const [notes, setNotes] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
+export default function Index() {
+  const [notes, setNotes] = useState([]);
+  const [user, setUser] = useState(null);
   const { settings } = useSettings();
-  const { isRecording, audioBlob, startRecording, stopRecording, clearRecording, error } = useVoiceRecording();
+  const toast = useToast();
+  const { isRecording, audioBlob, startRecording, stopRecording } = useVoiceRecording();
 
-  useEffect(() => {
-    NotesService.getAllNotes().then(({ data }) => {
-      setNotes(data || []);
+  useEffect(()=>{
+    supabase.auth.getUser().then(r=>{
+      if (!r.data.user) return;
+      setUser(r.data.user);
+      refreshNotes(r.data.user.id);
+    });
+    supabase.auth.onAuthStateChange((_e, s)=> {
+      if (s?.user) { setUser(s.user); refreshNotes(s.user.id); }
     });
   }, []);
 
+  const refreshNotes = (uid) =>
+    NotesService.fetchNotes(uid).then(({data})=>setNotes(data||[]));
+
   const handleSave = async () => {
-    if (!audioBlob) return;
+    if (!audioBlob || !user) return;
+    const { publicUrl, error: upErr } = await AudioService.uploadAudio(user.id, audioBlob);
+    if (upErr) return toast.toast({ title: 'Upload failed', variant: 'destructive' });
+    const { text, error: tErr } = await AudioService.transcribe(publicUrl, settings);
+    if (tErr) return toast.toast({ title: 'Transcription failed', variant: 'destructive' });
 
-    setLoading(true);
-    const { publicUrl, error: uploadError } = await AudioService.uploadAudio(audioBlob);
-    if (uploadError) {
-      toast({ title: "Error", description: "Audio upload failed", variant: "destructive" });
-      setLoading(false);
-      return;
+    let summary = '';
+    if (settings.enableSummary && settings.provider==='openai' && settings.openaiKey) {
+      const { summary: s, error: sErr } = await AIService.summary(text, settings.openaiKey);
+      if (sErr) return toast.toast({ title: 'Summary failed', variant: 'destructive' });
+      summary = s;
     }
 
-    const { text, error: transcribeError } = await TranscriptionService.transcribeAudio(audioBlob, settings);
-    if (transcribeError) {
-      toast({ title: "Error", description: "Transcription failed", variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-
-    await NotesService.createNote({ text, summary: "", audio_url: publicUrl, user_id: "", });
-    setLoading(false);
-    clearRecording();
-    toast({ title: "Note Saved", description: "Your note has been saved." });
-    NotesService.getAllNotes().then(({ data }) => setNotes(data || []));
+    NotesService.createNote({
+      text, summary, audio_url: publicUrl, user_id: user.id,
+    }).then(({error}) => {
+      if (error) toast.toast({title:'Save failed', variant:'destructive'});
+      else { toast.toast({title:'Saved'}); refreshNotes(user.id); }
+    });
   };
 
   return (
-    <div className="p-6 max-w-xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Record and Save Note</h1>
-
+    <div>
+      <h1>Record and Save Note</h1>
       {!isRecording ? (
-        <Button className="w-full mb-4" onClick={startRecording}><Mic className="mr-2" />Start Recording</Button>
+        <Button onClick={startRecording}><Mic/> Start Recording</Button>
       ) : (
-        <Button className="w-full mb-4" variant="destructive" onClick={stopRecording}><Square className="mr-2" />Stop Recording</Button>
+        <Button onClick={stopRecording}><Square/> Stop Recording</Button>
       )}
 
       {audioBlob && (
-        <div className="space-y-4">
-          <audio controls src={URL.createObjectURL(audioBlob)} className="w-full" />
-          <Button className="w-full" onClick={handleSave} disabled={loading}>{loading ? "Saving..." : "Save Note"}</Button>
-        </div>
+        <>
+          <audio controls src={URL.createObjectURL(audioBlob)}/>
+          <Button onClick={handleSave}>Save Note</Button>
+        </>
       )}
 
-      <h2 className="text-xl font-bold mt-8 mb-2">Saved Notes</h2>
-      {notes.length === 0 ? <p>No notes yet.</p> : (
-        <ul className="space-y-2">
-          {notes.map(note => (
-            <li key={note.id} className="p-4 bg-gray-100 rounded">
-              <p className="text-sm text-gray-600">{new Date(note.created_at).toLocaleString()}</p>
-              <p className="mt-2">{note.text}</p>
-              {note.audio_url && <audio controls src={note.audio_url} className="w-full mt-2" />}
-            </li>
-          ))}
-        </ul>
-      )}
+      <h2>Saved Notes</h2>
+      {notes.length===0 ? <p>No notes yet.</p> : notes.map(n=>(
+        <div key={n.id}>
+          <audio controls src={n.audio_url}/>
+          <p>{n.text}</p>
+          {n.summary && <small>Summary: {n.summary}</small>}
+        </div>
+      ))}
     </div>
   );
-};
-
-export default Index;
+}
