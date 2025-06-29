@@ -1,28 +1,27 @@
+// src/App.tsx
 import { useEffect, useState } from "react";
-import { AuthService } from "@/services/authService";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Index from "./pages/Index";
-import Settings from "./pages/Settings";
-import Login from "./pages/Login";
 import { supabase } from "@/integrations/supabase/client";
+import { AuthService } from "@/services/authService";
+import Index from "@/pages/Index";
+import Settings from "@/pages/Settings";
+import Login from "@/pages/Login";
 
-const App = () => {
+export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    AuthService.getUser().then((res) => {
-      setUser(res);
+    AuthService.getUser().then((r) => {
+      setUser(r);
       setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null);
     });
 
-    return () => {
-      listener.subscription.unsubscribe();
-    };
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   if (loading) return <div className="p-8">Loading...</div>;
@@ -34,6 +33,10 @@ const App = () => {
           <>
             <Route path="/" element={<Index />} />
             <Route path="/settings" element={<Settings />} />
+            <Route
+              path="*"
+              element={<Navigate to="/" replace />}
+            />
           </>
         ) : (
           <Route path="*" element={<Login />} />
@@ -41,6 +44,4 @@ const App = () => {
       </Routes>
     </BrowserRouter>
   );
-};
-
-export default App;
+}
