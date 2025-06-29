@@ -3,6 +3,7 @@ import { AuthService } from "@/services/authService";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
+import Settings from "./pages/Settings";
 import { supabase } from "@/integrations/supabase/client";
 
 const App = () => {
@@ -30,7 +31,11 @@ const App = () => {
     <BrowserRouter>
       <Routes>
         {user ? (
-          <Route path="/" element={<Index />} />
+          <>
+            <Route path="/" element={<Index />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" />} />
+          </>
         ) : (
           <Route path="*" element={<Login />} />
         )}
@@ -40,4 +45,3 @@ const App = () => {
 };
 
 export default App;
-
